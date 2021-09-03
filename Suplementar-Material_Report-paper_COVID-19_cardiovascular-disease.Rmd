@@ -1,0 +1,1498 @@
+---
+title: 'Cardiovascular disease worsens the maternal prognosis of COVID-19'
+subtitle: 'Codes and outputs'
+date:  "08/20/2021"
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{figure}{H} 
+output:   
+  pdf_document:
+    keep_tex: yes
+  word_document: default
+  html_document:
+    df_print: paged
+    self_contained: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Description
+ 
+This file presents the documentation of the analysis of article "Cardiovascular disease worsens the maternal prognosis of COVID-19" with authors XXXXXX. ATUALIZAR AQUI COM AS QUESTÕES DOS AUTORES
+
+# R packages used, functions and dataset import
+
+
+The data are analyzed using the free-software R (https://www.R-project.org) in version 4.0.3. Next, we present and load the libraries used in the data analysis process.
+
+ 
+```{r pacotes,echo=TRUE,message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+loadlibrary <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = T)
+    if (!require(x, character.only = TRUE))
+      stop("Package not found")
+  }
+}
+
+packages <-
+  c(
+    "dplyr",
+    "MatchIt",
+    "lubridate",
+    "readr",
+    "readxl",
+    "ggplot2",
+    "kableExtra",
+    "tables",
+    "questionr",
+    "car",
+    "data.table",
+    "magrittr",
+    "tidyverse",
+    "readxl",
+    "summarytools",
+    "modelsummary",
+    "RColorBrewer",
+    "zoo",
+    "WeightIt",
+    "jtools",
+    "cobalt",
+    "weights"
+)
+lapply(packages, loadlibrary)
+```
+
+One can see below the functions that will be used in the data analysis.
+```{r,echo=TRUE, eval=TRUE, message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+#functions for summary measures
+media <- function(x)
+  mean(x, na.rm = TRUE)
+mediana <- function(x)
+  median(x, na.rm = TRUE)
+DP <- function(x)
+  sd(x, na.rm = TRUE)
+minimo <- function(x)
+  base::min(x, na.rm = TRUE)
+maximo <- function(x)
+  base::max(x, na.rm = TRUE)
+q25 <- function(x)
+  stats::quantile(x, p = 0.25, na.rm = TRUE)
+q75 <- function(x)
+  stats::quantile(x, p = 0.75, na.rm = TRUE)
+IQR <- function(x)
+  round(q75(x) - q25(x), 2)
+n <- function(x)
+  sum(!is.na(x))
+```
+
+The Influenza Epidemiological Surveillance Information System, SIVEP-Gripe (Sistema de Informação de Vigilância Epidemiológica da Gripe), is a
+nationwide surveillance database used to monitor severe acute respiratory infections in Brazil. 
+
+Notification is mandatory for Influenza Syndrome (characterized by at least two of the following signs and symptoms: fever, even if referred, chills, sore throat, headache, cough, runny nose, olfactory or taste disorders) and who has dyspnea/respiratory discomfort or persistent pressure in the chest or O2 saturation less than 95\% in room air or bluish color of the lips or face. Asymptomatic individuals with laboratory confirmation by molecular biology or immunological examination for COVID-19 infection are also reported.
+
+For notifications in Sivep-Gripe, hospitalized cases in both public and private hospitals and all deaths due to severe acute respiratory infections regardless of hospitalization must be considered.
+
+The search was limited to the first notified case of COVID-19 in February 2020 until the 15th epidemiological week of 2021 (up to April 17, 2021). The datasets were obtained on May 5, 2021, on the site https://opendatasus.saude.gov.br/dataset. The first period (8th to 53rd epidemiological week of 2020) and the second period (1st to 15th epidemiological week of 2021) datasets can be obtained at https://drive.google.com/file/d/1jts4h0ovdwFh86SdKyslMLSG9rOy3UjX/view?usp=sharing and at https://drive.google.com/file/d/1gQSy_dcUkd1UrDEcsrDbyGl4gEvcI8z_/view?usp=sharing, respectively. The data are loaded below:
+
+```{r,echo=FALSE, eval=TRUE, message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+ memory.limit(999999)
+```
+
+```{r,echo=TRUE,message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+######### loading the datasets ###########
+#2021
+data_2021 <- read_delim(
+  "INFLUD21-03-05-2021.csv",
+  ";",
+  escape_double = FALSE,
+  locale = locale(encoding = "ISO-8859-2"),
+  trim_ws = TRUE
+)
+
+
+#2020
+data_2020 <- read_delim(
+  "INFLUD-03-05-2021.csv",
+  ";",
+  escape_double = FALSE,
+  locale = locale(encoding = "ISO-8859-2"),
+  trim_ws = TRUE
+)
+
+
+sem <- 15 #limit of epidemiological week of 2021
+
+#memory.limit(999999)
+
+#### Concatenating 2020 and 2021 data ##############
+data_all <- rbind(data_2020, data_2021)
+
+#Creating the case year variable
+data_all <-  data_all %>%
+  dplyr::mutate(
+    dt_sint = as.Date(DT_SIN_PRI, format = "%d/%m/%Y"),
+    year_case = lubridate::year(dt_sint),
+  )
+```
+ 
+There are `r dim(data_all)[1]` observations. The case selection is presented in the following according to the flowchart presented in the article. 
+
+# Case selection and data treatment
+
+The first filter consists of selecting the cases from 8th epidemiological week of 2020 to 15th epidemiological week of 2021. 
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Cases from the 8th epidemiological week of 2020 to 15th of 2021
+data1 <- data_all %>% 
+  filter((year_case==2020 & SEM_PRI >=8) | year_case ==2021)
+```
+
+
+There are `r dim(data1[data1$year_case==2021  & data1$SEM_PRI==53, ])[1]` cases in 2021 in epidemiological week 53 of 2020. These are cases from the first two days of 2021, which are still part of the last epidemiological week of 2020 (http://portalsinan.saude.gov.br/calendario-epidemiologico?layout=edit&id=168). However, these cases belong to the 53rd week of 2020 and we corrected as follows:
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+  data1 <- data1 %>% 
+  mutate(year_case = ifelse(year_case ==2021 & SEM_PRI ==53, 2020, year_case)) %>%  
+  filter(year_case==2020 | (year_case ==2021 & SEM_PRI <= sem))
+```
+
+There are `r dim(data1)[1]` observations. 
+
+The next selection consists of selecting only confirmed cases of COVID-19:
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+##Filtering confirmed cases of COVID-19  
+data2 <- data1 %>% 
+    filter(CLASSI_FIN == 5)
+```
+
+There are `r dim(data2)[1]` observations.
+
+The next step is to identify hospitalized cases (`HOSPITAL=1`) and then select only those cases.
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Filtering only hospitalized cases
+data3 <- data2 %>% 
+  filter(HOSPITAL == 1)
+```
+ 
+Now we have `r dim(data3)[1]` observations.
+
+The next selection consists of selecting females cases:
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+##Filtering female notifications
+data4 <- filter(data3, CS_SEXO == "F")
+```
+
+There are `r dim(data4)[1]` observations.
+
+The next selection consists of selecting women between 10 and 55 years old. 
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Filtering women aged 10-55
+data5 <- data4 %>% 
+  filter(NU_IDADE_N > 9 & NU_IDADE_N <= 55)
+```
+
+There are `r dim(data5)[1]` observations.
+
+The next step is to identify pregnant and postpartum people (variable `classi_gesta_puerp`) and then select only those cases.
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Creating the classification variable if pregnant, postpartum and not (neither pregnant nor postpartum)
+data5 <- data5 %>%
+  mutate(
+    classi_gesta_puerp = case_when(
+      CS_GESTANT == 1  ~ "1tri",  #1st trimester
+      CS_GESTANT == 2  ~ "2tri",  #2nd trimester
+      CS_GESTANT == 3  ~ "3tri",  #3rd trimester
+      CS_GESTANT == 4  ~ "IG_ig", #ignored gestational Age
+      CS_GESTANT == 5 &
+        PUERPERA == 1 ~ "puerp",  #puerperium
+      CS_GESTANT == 9 & PUERPERA == 1 ~ "puerp", #puerperium
+      TRUE ~ "no" #neither pregnant nor postpartum
+    )
+  )
+
+#Filtering only pregnant and postpartum women
+data6 <- data5 %>%
+  filter(classi_gesta_puerp != "no")
+```
+
+There are `r dim(data6)[1]` observations.
+
+The variable identified as `EVOLUCAO` is categorized with 1 - cure, 2 - death by SARS, 3 - death by other cause, 9 - ignored. 
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data6, freq(EVOLUCAO))
+```
+
+Now we are going to select only the finalized cases:
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Filtering only finalized cases
+data7 <- data6 %>% 
+  filter((EVOLUCAO == 1 | EVOLUCAO == 2 | EVOLUCAO == 3) & !is.na(EVOLUCAO))
+
+#Creating the evolution variable  
+data7 <- data7 %>% 
+  mutate(evolution = case_when(
+    EVOLUCAO == 1 ~ "cure", 
+    EVOLUCAO == 2 ~ "death",
+    EVOLUCAO == 3 ~ "death"
+  ))
+
+with(data7, freq(evolution))
+```
+
+There are `r dim(data7)[1]` confirmed and hospitalized cases of COVID-19 in pregnant and postpartum women aged 10 to 55 years. We identify `r round(((dim(data7[is.na(data7$CARDIOPATI),])[1]+length(which(data7$CARDIOPATI == 9)))/dim(data7)[1])*100,2)`\% of these notifications without any information about the presence or absence of cardiovascular diseases (CVD). The next selection consists of selecting cases where the CVD variable (`CARDIOPATI`) indicates yes or no:
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data7, freq(CARDIOPATI))
+
+#Creating the CVD variable
+data7 <- data7 %>% 
+  mutate(CVD = case_when(
+    CARDIOPATI == 1 ~ "yes", 
+    CARDIOPATI == 2 ~ "no",
+    TRUE ~ NA_character_
+  ))
+
+```
+
+Now we present the final dataset.
+```{r, echo=TRUE, eval=TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Filtering cases with information about CVD
+data <- data7 %>% 
+  filter(!is.na(CVD))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+questionr::freq(
+  data$CVD,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+)  %>%
+  kable(caption = "Frequency of CVD", digits = 2)  %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+# # Epidemiologic characteristics 
+
+## Ethnicity
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+# Ethnicity
+data <-  data %>%
+  mutate(
+    ethnicity = case_when(
+      CS_RACA == 1 ~ "white",
+      CS_RACA == 2 ~ "black",
+      CS_RACA == 3 ~ "yellow",
+      CS_RACA == 4 ~ "brown",
+      CS_RACA == 5 ~ "indigenous",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(ethnicity, CVD, prop = "c", useNA = "no", chisq = FALSE))
+```
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$ethnicity, data$CVD)
+```
+
+## Education
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <- data %>%
+     mutate(education = case_when(CS_ESCOL_N == 0 ~ "No schooling",
+                        CS_ESCOL_N == 1 ~ "1st to 5th grade",
+                        CS_ESCOL_N == 2 ~ "6th to 9th grade",
+                        CS_ESCOL_N == 3 ~ "Middle school",
+                        CS_ESCOL_N == 4 ~ "Superior",
+                          TRUE ~ NA_character_))
+
+data$education <- factor(data$education,
+levels = c("No schooling","1st to 5th grade", "6th to 9th grade",
+"Middle school", "Superior"))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(education, CVD, prop = "c", useNA = "no", chisq = FALSE))
+```
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$education, data$CVD)
+```
+
+## Age (Years)
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+datasummary((CVD) ~ NU_IDADE_N*(n+media+DP+mediana+minimo+maximo+q25+q75+IQR),
+            data = data, output = 'markdown')
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+t.test(NU_IDADE_N ~ CVD, data = data)
+```
+
+## Age group
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+data <-  data %>%
+  mutate(
+    age_group = case_when(
+      NU_IDADE_N <= 19 ~ "<20",
+      NU_IDADE_N >= 20
+      & NU_IDADE_N <= 34 ~ "20-34",
+      NU_IDADE_N > 34 ~ ">=35",
+      TRUE ~ NA_character_
+    )
+  )
+data$age_group <-
+  factor(data$age_group, levels = c("<20", "20-34", ">=35"))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(age_group, CVD, prop = "c", useNA = "no", chisq = FALSE))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data,fisher.test(age_group, CVD))
+```
+
+## Residence area
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(zone = case_when(CS_ZONA ==1  ~ "Urban",
+                             CS_ZONA == 2 ~ "Rural",
+                             CS_ZONA == 3 ~ "Periurban",
+                               TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable( zone, CVD, prop = "c", useNA = "no", chisq = FALSE))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$zone, data$CVD)
+```
+
+## Gestational moment
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$classi_gesta_puerp, data$CVD, prop="c", OR=TRUE, useNA = "no", chisq = TRUE)
+```
+
+## Hospital-acquired infection
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(hospital_infection = case_when(NOSOCOMIAL ==1  ~ "yes",
+                             NOSOCOMIAL == 2 ~ "no",
+                               TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable( hospital_infection, CVD, prop = "c", useNA = "no", chisq = FALSE))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$hospital_infection, data$CVD)
+```
+
+# Symptoms
+
+## Fever
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(fever = case_when(FEBRE == 1 ~ "yes",
+                              FEBRE == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, fever, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Cough
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(cough = case_when(TOSSE == 1 ~ "yes",
+                              TOSSE == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, cough, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+
+## Sore throat
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(sore_throat = case_when(GARGANTA == 1 ~ "yes",
+                              GARGANTA  == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, sore_throat, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Dyspnea
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(dyspnea = case_when(DISPNEIA == 1 ~ "yes",
+                              DISPNEIA == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, dyspnea, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+
+## Respiratory distress
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(resp_dist = case_when(DESC_RESP == 1 ~ "yes",
+                              DESC_RESP == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, resp_dist, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Saturation
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(saturation = case_when(SATURACAO == 1 ~ "yes",
+                              SATURACAO == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, saturation, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+
+## Diarrhea
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(diarrhea = case_when(DIARREIA == 1 ~ "yes",
+                              DIARREIA == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, diarrhea, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+
+## Vomit
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(vomit = case_when(VOMITO == 1 ~ "yes",
+                              VOMITO == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, vomit, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Abdominal pain
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(abd_pain = case_when(DOR_ABD == 1 ~ "yes",
+                              DOR_ABD == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, abd_pain, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Fatigue
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(fatigue = case_when(FADIGA == 1 ~ "yes",
+                              FADIGA == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, fatigue, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Loss of smell
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(loss_smell = case_when(PERD_OLFT == 1 ~ "yes",
+                              PERD_OLFT == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, loss_smell, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Loss of taste
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <-  data %>%
+  mutate(loss_taste = case_when(PERD_PALA == 1 ~ "yes",
+                              PERD_PALA == 2 ~ "no",
+                              TRUE ~ NA_character_))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, loss_taste, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+
+## Any respiratory symptom
+
+
+Now we are going to create the variable `resp_symp` indicating the presence of at least one respiratory symptom (Dyspnea, Fadigue, Saturation, Respiratory distress). Empty cells are considered missing data (`<NA>`). The variable `qt_resp_symp` indicates the number of respiratory symptoms of each case.  
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- select(data,dyspnea,fatigue,saturation,resp_dist )
+soma <- function(x){
+  if (sum(is.na(x))==4)
+    return(NA_character_)
+  else
+   return(sum(!is.na(x) & x=="yes")) 
+}
+data$qt_sintomas_resp_aux <- apply(df,1,soma)
+
+data <-  data %>%
+  mutate(resp_symp = case_when(qt_sintomas_resp_aux >=1 ~ "yes",
+                                  qt_sintomas_resp_aux ==0 ~ "no",
+                               TRUE ~ NA_character_))
+
+with(data, ctable(CVD, resp_symp, prop="r", useNA = "no", chisq = TRUE, OR = TRUE))
+
+
+data <-  data %>%
+  mutate(qt_resp_symp = case_when(qt_sintomas_resp_aux == 4  ~ "4 symptoms",
+                                  qt_sintomas_resp_aux == 3  ~ "3 symptoms",
+                                  qt_sintomas_resp_aux == 2  ~ "2 symptoms",
+                                  qt_sintomas_resp_aux == 1  ~ "1 symptom",
+                                  qt_sintomas_resp_aux == 0  ~ "No respiratory symptom",
+                               TRUE ~ NA_character_))
+
+with(data, ctable(qt_resp_symp, CVD, prop="c", useNA = "no", chisq = TRUE))
+```
+
+## Any symptom
+
+<!-- Similar to the analysis of any respiratory symptom, we are going to create the variable `symp` indicating the presence of at least one symptom (Dyspnea, Fatigue, Saturation, Respiratory distress, Fever, Cough, Sore throat, Diarrhea, Vomit, Abdominal pain, Loss of smell, Loss of taste). Empty cells are considered missing data (`<NA>`). -->
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- select(data, dyspnea, fatigue, saturation, resp_dist, fever, cough, sore_throat, diarrhea, vomit, abd_pain, loss_smell,loss_taste)
+
+soma <- function(x){
+  if (sum(is.na(x)) == 12)
+    return(NA_character_)
+  else
+    return(sum(!is.na(x) & x=="yes")) 
+}
+data$qt_symp_aux <- apply(df,1,soma)
+
+data <-  data %>%
+  mutate(symp = case_when(qt_symp_aux >= 1 ~ "yes",
+                          qt_symp_aux == 0 ~ "no",
+                          TRUE ~ NA_character_))
+
+with(data, ctable(CVD, symp,  prop="r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+# Comorbities
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+#Hematologic
+data <-  data %>%
+mutate(hematologic = case_when(HEMATOLOGI == 1 ~ "yes",
+                              HEMATOLOGI == 2 ~ "no", 
+                              TRUE ~ NA_character_))
+#Immunodepression
+data <-  data %>%
+mutate(imunodepre = case_when(IMUNODEPRE == 1 ~ "yes",
+                              IMUNODEPRE == 2 ~ "no", 
+                              TRUE ~ NA_character_))
+#Hepatic
+data <-  data %>%
+mutate(hepatic = case_when(HEPATICA == 1 ~ "yes",
+                            HEPATICA== 2 ~ "no", 
+                            TRUE ~ NA_character_))
+#Asthma
+data <-  data %>%
+mutate(asthma = case_when(ASMA == 1 ~ "yes",
+                        ASMA == 2 ~ "no", 
+                        TRUE ~ NA_character_))
+#Diabetes
+data <-  data %>%
+mutate(diabetes = case_when(DIABETES == 1 ~ "yes",
+                            DIABETES == 2 ~ "no", 
+                            TRUE ~ NA_character_))
+#Neurologic
+data <-  data %>%
+mutate(neurologic = case_when(NEUROLOGIC == 1 ~ "yes",
+                              NEUROLOGIC == 2 ~ "no", 
+                              TRUE ~ NA_character_))
+#Pneumologic
+data <-  data %>%
+mutate(pneumologic = case_when(PNEUMOPATI == 1 ~ "yes",
+                              PNEUMOPATI == 2 ~ "no", 
+                              TRUE ~ NA_character_))
+#Renal
+data <-  data %>%
+mutate(renal = case_when(RENAL == 1 ~ "yes",
+                         RENAL == 2 ~ "no", 
+                         TRUE ~ NA_character_))
+#Obesity
+data <-  data %>%
+mutate(obesity = case_when(OBESIDADE == 1 ~ "yes",
+                              OBESIDADE == 2 ~ "no", 
+                              TRUE ~ NA_character_))
+
+```
+
+## Hematologic
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, hematologic, prop = "r", useNA = "no", chisq = TRUE, OR=TRUE))
+```
+
+## Diabetes
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$diabetes, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+## Obesity
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$obesity, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+## Asthma
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$asthma, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+## Hepatic
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$hepatic, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$hepatic, data$CVD)
+```
+
+## Neurologic
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$neurologic, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(data$neurologic, data$CVD)
+```
+
+## Pneumologic
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$pneumologic, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+## Immunodepression
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$imunodepre, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+## Renal
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+ctable(data$CVD, data$renal, chisq=TRUE, prop="r", OR=TRUE, useNA = "no")
+```
+
+The variable `comorb_group` indicates the number o comorbidities of each notification.
+
+## Any comorbidity
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- select(data,obesity,hematologic,hepatic,asthma,diabetes,neurologic,pneumologic,imunodepre,renal)
+soma <- function(x){
+  if (sum(is.na(x))==9)
+    return(NA_character_)
+  else
+   return(sum(!is.na(x) & x=="yes")) 
+}
+data$qt_comorb_aux <- apply(df,1,soma)
+
+data <-  data %>%
+  mutate(qt_comorb = case_when(qt_comorb_aux== 9  ~ "9 comorbidities",                                                                           qt_comorb_aux== 8  ~ "8 comorbidities",
+                                  qt_comorb_aux == 7  ~ "7 comorbidities",
+                                  qt_comorb_aux== 6  ~ "6 comorbidities",
+                                  qt_comorb_aux == 5  ~ "5 comorbidities",
+                                  qt_comorb_aux== 4  ~ "4 comorbidities",
+                                  qt_comorb_aux == 3  ~ "3 comorbidities",
+                                  qt_comorb_aux == 2  ~ "2 comorbidities",
+                                  qt_comorb_aux == 1  ~ "1 comorbidity",
+                                  qt_comorb_aux == 0  ~ "No comorbidity",
+                               TRUE ~ NA_character_))
+
+data <-  data %>%
+  mutate(comorb_group = case_when(qt_comorb_aux == 0 ~ "No comorbidity",
+                                  qt_comorb_aux == 1 ~ "1 comorbidity",
+                                  qt_comorb_aux == 2 ~ "2 comorbidities",
+                                  qt_comorb_aux > 2 ~ ">2 comorbidities",
+                                  TRUE ~ NA_character_))
+
+data$comorb_group <-
+  factor(data$comorb_group, levels = c("No comorbidity", "1 comorbidity", "2 comorbidities", ">2 comorbidities"))
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(comorb_group, CVD, prop="c", useNA = "no", chisq = TRUE, OR = TRUE))
+```
+
+
+# Outcome 
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+# ICU
+data <-  data %>%
+  mutate(icu = case_when(UTI == 1 ~ "yes",
+                         UTI == 2 ~ "no",
+                         TRUE ~ NA_character_))
+
+# Ventilatory support
+data <-  data %>%
+  mutate(ven_support = case_when(SUPORT_VEN == 1 ~ "yes, invasive",
+                                SUPORT_VEN == 2 ~ "yes, noninvasive",
+                                SUPORT_VEN == 3 ~ "No",
+                               TRUE ~ NA_character_))
+```
+
+## ICU
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+#tabela cruzada de uti 
+with(data, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+
+### 1st trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df4, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+
+### 2nd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df4, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### 3rd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df4, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### Puerperium
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df4, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+
+## Duration of hospitalization in ICU
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <- data %>%
+   dplyr::mutate(
+    dt_entuti = as.Date(DT_ENTUTI, format = "%d/%m/%Y"),
+    dt_saiduti = as.Date(DT_SAIDUTI, format = "%d/%m/%Y"),
+    icu_days = as.numeric(dt_saiduti-dt_entuti)
+)
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[data$icu== "yes" & !is.na(data$icu) & !is.na(data$icu_days),]
+
+datasummary((CVD) ~ icu_days*(n+media+DP+mediana+minimo+maximo+q25+q75+IQR),
+            data = df, output = 'markdown')
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+wilcox.test(icu_days ~ CVD, data = df)
+```
+
+
+## Ventilatory support
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, ven_support, prop="r", useNA = "no", chisq = TRUE))
+```
+
+## Intubation
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <- data %>% 
+  mutate(intubation = case_when(SUPORT_VEN == 1 ~ "yes",
+                                SUPORT_VEN == 2 ~ "no",
+                                SUPORT_VEN == 3 ~ "no",
+                               TRUE ~ NA_character_)
+         )
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### 1st trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = FALSE))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(df4$CVD, df4$intubation)
+```
+
+### 2nd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### 3rd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### Puerperium
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+## Outcome - cure x death
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### 1st trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = FALSE))
+
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+fisher.test(df4$CVD, df4$evolution)
+```
+
+
+### 2nd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### 3rd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+### Puerperium
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE))
+```
+
+## Time elapsed between the start of symptoms and the outcome (days)
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data <- data %>%
+   dplyr::mutate(
+    dt_sin_pri = as.Date(DT_SIN_PRI, format = "%d/%m/%Y"),
+    dt_evoluca = as.Date(DT_EVOLUCA, format = "%d/%m/%Y"),
+    days_symp_evol = as.numeric(dt_evoluca-dt_sin_pri)
+)
+```
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[!is.na(data$days_symp_evol) & !is.na(data$CVD),]
+
+datasummary((CVD) ~ days_symp_evol*(n+media+DP+mediana+minimo+maximo+q25+q75+IQR),
+            data = df, output = 'markdown')
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+wilcox.test(days_symp_evol ~ CVD, data = df)
+```
+
+### Considering only death cases
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[!is.na(data$days_symp_evol) & !is.na(data$CVD),]
+
+df <- df %>% 
+  filter(evolution == "death")
+
+datasummary((CVD) ~ days_symp_evol*(n+media+DP+mediana+minimo+maximo+q25+q75+IQR),
+            data = df, output = 'markdown')
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+wilcox.test(days_symp_evol ~ CVD, data = df)
+```
+
+### Considering only cure cases
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[!is.na(data$days_symp_evol) & !is.na(data$CVD),]
+
+df <- df %>% 
+  filter(evolution == "cure")
+
+datasummary((CVD) ~ days_symp_evol*(n+media+DP+mediana+minimo+maximo+q25+q75+IQR),
+            data = df, output = 'markdown')
+
+wilcox.test(days_symp_evol ~ CVD, data = df)
+```
+
+
+## Distribution of number of hospitalizations due to COVID-19 infection by month of first symptoms, stratified by groups with and without CVD
+
+
+```{r, warning=FALSE} 
+# Date of the first symptoms
+data <- data %>%
+mutate(dt_first_symp = as.Date(DT_SIN_PRI, format = "%d/%m/%Y")
+)
+```
+
+The next graph presents the temporal evolution of hospitalizations by month of first symptoms, stratified by groups with and without cardiovascular disease.  
+
+
+```{r, warning=FALSE} 
+## Creating the variable month_year
+d1 <- data[data$dt_first_symp < as.Date("01/04/2021",format="%d/%m/%Y"),] 
+d1 <- d1 %>%
+mutate(month_year = paste(formatC(month(dt_first_symp), width=2, format="d", flag="0"),year(dt_first_symp),sep="/"))
+
+d<- table(factor(d1$month_year, levels = c("03/2020", "04/2020", "05/2020", "06/2020", "07/2020", "08/2020", "09/2020", "10/2020", "11/2020", "12/2020", "01/2021", "02/2021", "03/2021") ), d1$CVD)
+G <- data.table(d)
+Sys.setlocale("LC_TIME","C")
+G$V1 <- as.yearmon(G$V1, format = "%m/%Y")
+ggplot(G, aes(x=V1, y=N, colour=factor(V2), group=V2)) +
+geom_line(size=1.2) + geom_point(size=3) +
+labs( x="Month of first symptom", y="Absolute frequency", color = "CVD")
+```
+
+Frequency table of number of hospitalizations due to COVID-19 infection by month of first symptoms, stratified by groups with and without CVD.
+
+```{r, warning=FALSE}
+d1$mes_ano <- factor(d1$month_year, levels = c("03/2020", "04/2020", "05/2020", "06/2020", "07/2020", "08/2020", "09/2020", "10/2020", "11/2020", "12/2020", "01/2021", "02/2021", "03/2021"))
+ctable(d1$month_year, d1$CVD, prop="c", useNA = "no")
+```
+
+Now, to understand better the monthly growth rate of hospitalized cases by COVID-19, we present the following graph:
+
+```{r}
+
+D1<- table(d1$month_year, d1$CVD) %>%
+      data.table()
+D1$V1 <- as.yearmon(D1$V1, format = "%m/%Y")
+
+# Calculating the monthly growth rate
+D1 <- D1 %>% 
+  arrange(D1)
+
+dif<-c()
+dif[1:2]<-0
+for(i in 1:nrow(D1)){
+  if( i %% 2 == 0){
+    dif[i]<-D1$N[i+2]-D1$N[i]
+  }
+  else{
+    dif[i]<-D1$N[i+2]-D1$N[i] 
+  }
+}
+D1$dif<-dif
+
+taxa_cresc<-c()
+taxa_cresc[1:2]<-0
+for(i in 1:(nrow(D1)-2)){
+  if( i %% 2 == 0){
+    taxa_cresc[i+2]<-(dif[i])/(D1$N[i])
+  }
+  else{
+    taxa_cresc[i+2]<-(dif[i])/(D1$N[i])
+  }
+}
+
+D1$growth_rate <-taxa_cresc*100 
+
+ggplot(D1) + geom_line(aes(x=V1, y = growth_rate, color = V2), size=1.2) + labs( x="Month of first symptom", y="Monthly growth rate (%)",color = "CVD")
+```
+
+### Proportion of deaths in the CVD and non-CVD groups, fixed the month of the first symptom.
+
+```{r}
+# Proportion of deaths in the group with presence of CVD
+d1 <- data
+d1 <- d1 %>% 
+  filter(CVD == 'yes')
+d1 <-  d1 %>%
+  mutate(month_year = paste(formatC(month(dt_first_symp), width=2, format="d", flag="0"),year(dt_first_symp),sep="/"))
+
+d<- prop.table(table(d1$month_year, d1$evolution),1)
+G3 <- as.data.frame(d)
+G3 <- G3[G3$Var2 == "death",]
+G3$Freq <- round((G3$Freq)*100, 2)
+G3$Var1 <- as.yearmon(G3$Var1, format = "%m/%Y") 
+
+# Proportion of deaths in the group with absence of CVD
+d2 <- data
+d2 <- d2 %>%
+  filter(CVD == 'no')
+d2 <-  d2 %>%
+  mutate(month_year = paste(formatC(month(dt_first_symp), width=2, format="d", flag="0"),year(dt_first_symp),sep="/"))
+
+d2<- prop.table(table(d2$month_year, d2$evolution),1)
+G32 <- as.data.frame(d2)
+G32 <- G32[G32$Var2 == "death",]
+G32$Freq <- round((G32$Freq)*100, 2)
+G32$Var1 <- as.yearmon(G32$Var1, format = "%m/%Y")
+
+# Concatening the proportion of deaths in both groups, with and without CVD
+G33 <- rbind(G3, G32)
+cardio <- c(rep("yes", nrow(G3)), rep("no", nrow(G32)))
+G33 <- cbind(G33, cardio)
+
+ggplot(data=G33,aes(x = Var1, y=Freq, color = cardio)) + geom_line(size=1.2) + 
+geom_point(size=3) +
+geom_hline(yintercept = 50) +
+labs( x="Month of first symptom", y="Proportion of deaths (%)", color = "CVD")  
+```
+
+## Propensity Score Matching (PSM):
+
+The analysis that will be made in this section aims to understand the effect of having cardiovascular disease or not on some variables of interest such as symptoms and outcome. In order to make the CVD and non-CVD groups similar with respect to the distribution of some variables that may bring confusion to the study, we will make use of the Propensity Score Matching (PSM) technique. The variables we will control in the analysis are: age, race, diabetes and obesity.
+
+
+First, we present the difference result between the groups regarding the control variables before the PSM. We consider as "balanced" the cases with mean difference greater than 0.05. As we can see, for most categories of control variables the groups are not balanced before the matching.
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+data$cardio <- ifelse(data$CVD=="yes",1,0)
+
+bal.tab(cardio ~ NU_IDADE_N + ethnicity + diabetes + obesity, data = data, estimand = "ATE", m.threshold = .05)
+``` 
+
+
+As one can see, all variables categories are balanced after PSM.
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+## Estimating the weights of each sampling unit
+fit <- weightit(cardio ~ NU_IDADE_N + ethnicity + diabetes + obesity, use.mlogit = FALSE, data = data,
+                  method = "ps", estimand = "ATE")
+
+data$weight <- fit$weights
+
+bal.tab(fit, m.threshold = 0.05, disp.v.ratio = TRUE)
+
+```
+ 
+
+### Symptom analysis after PSM:
+
+#### <span style="color:blue"> Fever </span>
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+
+with(data, ctable(CVD, fever, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Cough </span>
+
+```{r}
+with(data, ctable(CVD, cough, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Sore throat </span>
+
+```{r}
+with(data, ctable(CVD, sore_throat, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Dyspnea </span>
+
+```{r}
+with(data, ctable(CVD, dyspnea, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Respiratory distress </span>
+
+```{r}
+with(data, ctable(CVD, resp_dist, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Saturation </span>
+
+```{r}
+with(data, ctable(CVD, saturation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Diarrhea </span>
+
+```{r}
+with(data, ctable(CVD, diarrhea, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Vomit </span>
+
+```{r}
+with(data, ctable(CVD, vomit, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Fatigue </span>
+
+```{r}
+with(data, ctable(CVD, fatigue, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Loss of smell </span>
+
+```{r}
+with(data, ctable(CVD, loss_smell, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Loss of taste </span>
+
+```{r}
+with(data, ctable(CVD, loss_taste, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### <span style="color:blue"> Abdominal pain </span>
+
+```{r}
+with(data, ctable(CVD, abd_pain, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+
+#### Any respiratory symptom
+
+
+Now we are going to create the variable `resp_symp` indicating the presence of at least one respiratory symptom (Dyspnea, Fadigue, Saturation, Respiratory distress). Empty cells are considered missing data (`<NA>`). The variable `qt_resp_symp` indicates the number of respiratory symptoms of each case.
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(CVD, resp_symp, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(CVD, qt_resp_symp, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+#### Any symptom
+
+Similar to the analysis of any respiratory symptom, we are going to create the variable `symp` indicating the presence of at least one symptom (Dyspnea, Fatigue, Saturation, Respiratory distress, Fever, Cough, Sore throat, Diarrhea, Vomit, Abdominal pain, Loss of smell, Loss of taste). Empty cells are considered missing data (`<NA>`).
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+with(data, ctable(CVD, symp, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+
+### Outcome analysis after PSM:
+
+## <span style="color:blue"> ICU </span>
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+
+#### <span style="color:blue"> 1st trimester </span>
+
+```{r, warning=FALSE}
+df43 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df43, ctable(CVD, icu, prop="r", useNA = "no", OR=TRUE, chisq = TRUE, weights = weight))
+
+```
+
+
+#### <span style="color:blue">  2nd trimester </span>
+
+```{r, warning=FALSE}
+df43 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df43, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+#### <span style="color:blue">  3rd trimester </span>
+
+```{r, warning=FALSE}
+df43 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df43, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+#### <span style="color:blue">  Puerperium </span>
+
+```{r, warning=FALSE}
+df43 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df43, ctable(CVD, icu, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+### <span style="color:blue">  Days of hospitalization in ICU </span>
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+d_yes <- data %>% 
+   filter(CVD == "yes" & !is.na(icu_days))
+d_no <- data %>% 
+   filter(CVD == "no" & !is.na(icu_days))
+
+wtd.t.test(d_yes$icu_days, d_no$icu_days, weight = d_yes$weight, weighty = d_no$weight)
+
+```
+
+## <span style="color:blue"> Ventilatory support </span>
+
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, ven_support, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+## <span style="color:blue"> Intubation </span>
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE,  weights = weight))
+```
+
+### 1st trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### 2nd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### 3rd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### Puerperium
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df4, ctable(CVD, intubation, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+## Outcome - cure x death
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+with(data, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### 1st trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "1tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### 2nd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "2tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### 3rd trimester
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "3tri")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+### Puerperium
+
+```{r, warning=FALSE}
+df4 <- data %>% 
+  filter(classi_gesta_puerp == "puerp")
+
+with(df4, ctable(CVD, evolution, prop="r", OR=TRUE, useNA = "no", chisq = TRUE, weights = weight))
+```
+
+## Time elapsed between the start of symptoms and the outcome (days) after PSM
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+d_yes <- data %>% 
+   filter(CVD == "yes" & !is.na(days_symp_evol))
+d_no <- data %>% 
+   filter(CVD == "no" & !is.na(days_symp_evol))
+
+# Performing weighted Student's t-tests to compare the CVD and non-CVD groups with respect to the time elapsed between the start of symptoms and the outcome.
+wtd.t.test(d_yes$days_symp_evol, d_no$days_symp_evol, weight = d_yes$weight, weighty = d_no$weight)
+
+```
+
+### Considering only death cases
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[!is.na(data$days_symp_evol) & !is.na(data$CVD),]
+
+df <- df %>% 
+  filter(evolution == "death")
+```
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+d_yes <- df %>% 
+   filter(CVD == "yes" & !is.na(days_symp_evol))
+d_no <- df %>% 
+   filter(CVD == "no" & !is.na(days_symp_evol))
+
+# Fixed the death cases, we perform a weighted Student's t-tests to compare the CVD and non-CVD groups with respect to the time elipsed between the start of symptoms and the outcome.
+wtd.t.test(d_yes$days_symp_evol, d_no$days_symp_evol, weight = d_yes$weight, weighty = d_no$weight)
+
+```
+
+### <span style="color:blue"> Considering only cure cases </span>
+
+```{r, echo=TRUE,message=FALSE,warning =FALSE,error=FALSE}
+df <- data[!is.na(data$days_symp_evol) & !is.na(data$CVD),]
+
+df <- df %>% 
+  filter(evolution == "cure")
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+d_yes <- df %>% 
+   filter(CVD == "yes" & !is.na(days_symp_evol))
+d_no <- df %>% 
+   filter(CVD == "no" & !is.na(days_symp_evol))
+
+# Fixed the cure cases, we perform a weighted Student's t-tests to compare the CVD and non-CVD groups with respect to the time elipsed between the start of symptoms and the outcome.
+wtd.t.test(d_yes$days_symp_evol, d_no$days_symp_evol, weight = d_yes$weight, weighty = d_no$weight)
+
+```
+
+
+
+
+
+
