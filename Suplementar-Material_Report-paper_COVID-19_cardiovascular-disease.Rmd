@@ -6,12 +6,12 @@ header-includes:
   - \usepackage{float}
   - \floatplacement{figure}{H} 
 output:   
-  pdf_document:
-    keep_tex: yes
-  word_document: default
   html_document:
     df_print: paged
     self_contained: no
+  word_document: default
+  pdf_document:
+    keep_tex: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -21,7 +21,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Description
  
-This file presents the documentation of the analysis of article "Cardiovascular disease worsens the maternal prognosis of COVID-19" with authors XXXXXX. ATUALIZAR AQUI COM AS QUESTÕES DOS AUTORES
+This file presents the documentation of the analysis of article "Cardiovascular disease worsens the maternal prognosis of COVID-19" with authors Carolina Testa, Luciana de Godoi, Maria Rita Bortolotto, Nátaly Monroy, Bruna de Mattos, Agatha Rodrigues, and Rossana Francisco.
 
 # R packages used, functions and dataset import
 
